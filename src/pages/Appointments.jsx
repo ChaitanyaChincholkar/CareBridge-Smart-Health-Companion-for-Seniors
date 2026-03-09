@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { getDatabase, onValue, push, ref, set } from "firebase/database";
+import { getFirestore, collection, query, where, onSnapshot, addDoc } from "firebase/firestore";
 import app, { auth } from "../services/firebase";
 import AppLayout from "../components/AppLayout";
 import Modal from "../components/Modal";
 import { elderNavItems } from "../config/nav";
 import { Plus } from "lucide-react";
 
-const db = getDatabase(app);
+const db = getFirestore(app);
 
 const cardClass = "bg-white rounded-xl shadow-sm border border-slate-200 p-5";
 
@@ -19,6 +19,7 @@ export default function Appointments() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -27,14 +28,13 @@ export default function Appointments() {
       return;
     }
 
-    const apptsRef = ref(db, `/appointments/${user.uid}`);
-    const unsubscribe = onValue(
-      apptsRef,
+    const q = query(collection(db, 'appointments'), where('userId', '==', user.uid));
+    const unsubscribe = onSnapshot(
+      q,
       (snapshot) => {
-        const data = snapshot.val() || {};
-        const items = Object.entries(data).map(([key, value]) => ({
-          id: key,
-          ...value,
+        const items = snapshot.docs.map(docSnap => ({
+          id: docSnap.id,
+          ...docSnap.data()
         }));
 
         items.sort((a, b) => {
@@ -49,7 +49,8 @@ export default function Appointments() {
         setAppointments(items);
         setLoading(false);
       },
-      () => {
+      (err) => {
+        console.error(err);
         setAppointments([]);
         setLoading(false);
       }
@@ -73,19 +74,15 @@ export default function Appointments() {
       return;
     }
 
+    setIsSubmitting(true);
     try {
-      const apptsRef = ref(db, `/appointments/${user.uid}`);
-      const newRef = push(apptsRef);
-      const id = newRef.key;
-      const createdAt = Date.now();
-
-      await set(newRef, {
-        id,
-        doctorName,
-        hospital,
+      await addDoc(collection(db, 'appointments'), {
+        doctorName: doctorName.trim(),
+        hospital: hospital.trim(),
         date,
         time,
-        createdAt,
+        userId: user.uid,
+        createdAt: Date.now(),
       });
 
       setDoctorName("");
@@ -93,8 +90,11 @@ export default function Appointments() {
       setDate("");
       setTime("");
       setModalOpen(false);
-    } catch {
+    } catch (err) {
+      console.error(err);
       setError("Could not save this appointment. Please try again.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -186,9 +186,9 @@ export default function Appointments() {
           <button
             type="submit"
             className="w-full py-3 text-sm font-semibold rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 transition disabled:opacity-70 disabled:cursor-not-allowed"
-            disabled={!user}
+            disabled={!user || isSubmitting}
           >
-            Save Appointment
+            {isSubmitting ? 'Saving...' : 'Save Appointment'}
           </button>
         </form>
       </Modal>
@@ -197,7 +197,7 @@ export default function Appointments() {
         <p className="text-sm text-slate-600">Loading appointments…</p>
       ) : appointments.length === 0 ? (
         <p className={`${cardClass} text-sm text-slate-600`}>
-          {user ? 'No appointments yet. Click "Add Appointment" to add one.' : 'Log in to see your appointments.'}
+          {user ? 'No data available' : 'Log in to see your appointments.'}
         </p>
       ) : (
         <ul className="space-y-4">

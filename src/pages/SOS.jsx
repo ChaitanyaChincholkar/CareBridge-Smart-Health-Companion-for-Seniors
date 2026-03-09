@@ -1,17 +1,11 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  getDatabase,
-  ref,
-  push,
-  set,
-  update,
-} from 'firebase/database';
+import { getFirestore, collection, addDoc, doc, updateDoc } from 'firebase/firestore';
 import app, { auth } from '../services/firebase';
 import AppLayout from '../components/AppLayout';
 import { elderNavItems } from '../config/nav';
 
-const db = getDatabase(app);
+const db = getFirestore(app);
 
 export default function SOS() {
   const [sending, setSending] = useState(false);
@@ -31,15 +25,9 @@ export default function SOS() {
     setSending(true);
 
     try {
-      const alertsRef = ref(db, `/sosAlerts/${user.uid}`);
-      const newRef = push(alertsRef);
-      const id = newRef.key;
-      const timestamp = Date.now();
-
-      await set(newRef, {
-        id,
+      const sosDocRef = await addDoc(collection(db, 'sos'), {
         userId: user.uid,
-        timestamp,
+        timestamp: Date.now(),
         message: 'Emergency help requested',
       });
 
@@ -48,16 +36,17 @@ export default function SOS() {
           (position) => {
             const { latitude, longitude } = position.coords || {};
             if (typeof latitude === 'number' && typeof longitude === 'number') {
-              update(newRef, { latitude, longitude }).catch(() => {});
+              updateDoc(sosDocRef, { latitude, longitude }).catch(() => { });
             }
           },
-          () => {},
+          () => { },
           { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
         );
       }
 
       setSent(true);
-    } catch {
+    } catch (err) {
+      console.error(err);
       setError('Unable to send alert right now. Please try again.');
     } finally {
       setSending(false);
@@ -92,9 +81,8 @@ export default function SOS() {
       <div className="flex flex-col items-center justify-center py-12">
         <button
           type="button"
-          className={`w-56 h-56 rounded-full bg-red-600 hover:bg-red-700 text-white flex flex-col items-center justify-center text-lg font-bold shadow-2xl transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-red-400 disabled:opacity-70 disabled:cursor-not-allowed ${
-            !sending ? 'animate-pulse' : ''
-          }`}
+          className={`w-56 h-56 rounded-full bg-red-600 hover:bg-red-700 text-white flex flex-col items-center justify-center text-lg font-bold shadow-2xl transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-red-400 disabled:opacity-70 disabled:cursor-not-allowed ${!sending ? 'animate-pulse' : ''
+            }`}
           onClick={handleSendSOS}
           disabled={sending}
           aria-busy={sending}

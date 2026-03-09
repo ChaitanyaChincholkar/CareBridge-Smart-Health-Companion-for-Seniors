@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { getDatabase, ref, set } from 'firebase/database';
-import app from '../services/firebase';
+import { doc, setDoc, collection } from 'firebase/firestore';
+import { db } from '../services/firebase';
 import { registerWithEmail } from '../services/auth';
 
 export default function Register() {
@@ -25,16 +25,15 @@ export default function Register() {
     try {
       const user = await registerWithEmail(email.trim(), password);
 
-      const db = getDatabase(app);
-      const userRef = ref(db, `users/${user.uid}`);
-      await set(userRef, {
+      const elderRef = doc(collection(db, 'elders'), user.uid);
+      await setDoc(elderRef, {
         name,
         email: email.trim(),
         role: 'elder',
         createdAt: Date.now(),
       });
 
-      navigate('/dashboard');
+      navigate('/login');
     } catch (err) {
       if (err?.code === 'auth/email-already-in-use') {
         setError('This email is already registered. Please log in instead.');

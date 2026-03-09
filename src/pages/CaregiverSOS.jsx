@@ -1,16 +1,17 @@
 import { useEffect, useState, useRef } from 'react';
 import {
-  getDatabase,
-  ref,
-  onValue,
-  update,
-  get,
-} from 'firebase/database';
+  getFirestore,
+  collection,
+  onSnapshot,
+  doc,
+  updateDoc,
+  getDoc,
+} from 'firebase/firestore';
 import app from '../services/firebase';
 import AppLayout from '../components/AppLayout';
 import { caregiverNavItems } from '../config/nav';
 
-const db = getDatabase(app);
+const db = getFirestore(app);
 
 const ALERT_SOUND_URL = 'https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg';
 
@@ -36,7 +37,7 @@ export default function CaregiverSOS() {
           audio.pause();
           audio.currentTime = 0;
           audioUnlockedRef.current = true;
-        }).catch(() => {});
+        }).catch(() => { });
 
         document.removeEventListener('click', unlockAudio);
       }
@@ -50,23 +51,13 @@ export default function CaregiverSOS() {
   }, []);
 
   useEffect(() => {
-    const alertsRootRef = ref(db, '/sosAlerts');
-
-    const unsubscribe = onValue(
-      alertsRootRef,
+    const unsubscribe = onSnapshot(
+      collection(db, 'sos'),
       async (snapshot) => {
-        const root = snapshot.val() || {};
-        const collected = [];
-
-        Object.entries(root).forEach(([userId, userAlerts]) => {
-          Object.entries(userAlerts || {}).forEach(([alertId, alert]) => {
-            collected.push({
-              id: alertId,
-              userId,
-              ...alert,
-            });
-          });
-        });
+        const collected = snapshot.docs.map(docSnap => ({
+          id: docSnap.id,
+          ...docSnap.data()
+        }));
 
         collected.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
@@ -79,9 +70,12 @@ export default function CaregiverSOS() {
             const nameEntries = await Promise.all(
               uniqueUserIds.map(async (uid) => {
                 try {
-                  const nameRef = ref(db, `users/${uid}/name`);
-                  const nameSnap = await get(nameRef);
-                  return [uid, nameSnap.val() || null];
+                  const elderDocRef = doc(db, 'elders', uid);
+                  const elderSnap = await getDoc(elderDocRef);
+                  if (elderSnap.exists()) {
+                    return [uid, elderSnap.data().name || null];
+                  }
+                  return [uid, null];
                 } catch {
                   return [uid, null];
                 }
@@ -103,7 +97,7 @@ export default function CaregiverSOS() {
           currentIds.add(key);
           if (hasInitialLoadRef.current && !previousAlertIds.current.has(key) && audioUnlockedRef.current && audioRef.current) {
             audioRef.current.currentTime = 0;
-            audioRef.current.play().catch(() => {});
+            audioRef.current.play().catch(() => { });
           }
         }
         previousAlertIds.current = currentIds;
@@ -112,7 +106,8 @@ export default function CaregiverSOS() {
         setAlerts(alertsWithNames);
         setLoading(false);
       },
-      () => {
+      (err) => {
+        console.error(err);
         setError('Unable to load SOS alerts right now.');
         setLoading(false);
       }
@@ -123,9 +118,10 @@ export default function CaregiverSOS() {
 
   const handleMarkHandled = async (alert) => {
     try {
-      const alertRef = ref(db, `/sosAlerts/${alert.userId}/${alert.id}`);
-      await update(alertRef, { handled: true });
-    } catch {
+      const alertRef = doc(db, 'sos', alert.id);
+      await updateDoc(alertRef, { handled: true });
+    } catch (err) {
+      console.error(err);
       setError('Could not update alert. Please try again.');
     }
   };
@@ -151,9 +147,8 @@ export default function CaregiverSOS() {
           {alerts.map((alert) => (
             <li
               key={`${alert.userId}-${alert.id}`}
-              className={`${cardClass} ${
-                alert.handled ? 'bg-green-50 border-green-300' : 'bg-red-50 border-red-300'
-              }`}
+              className={`${cardClass} ${alert.handled ? 'bg-green-50 border-green-300' : 'bg-red-50 border-red-300'
+                }`}
             >
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                 <div>

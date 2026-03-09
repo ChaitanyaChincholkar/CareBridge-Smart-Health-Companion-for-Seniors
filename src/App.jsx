@@ -12,6 +12,7 @@ import CaregiverSOS from './pages/CaregiverSOS';
 import CaregiverMedications from './pages/CaregiverMedications';
 import CaregiverHealthLogs from './pages/CaregiverHealthLogs';
 import CaregiverLogin from './pages/CaregiverLogin';
+import CaregiverRegister from './pages/CaregiverRegister';
 import RoleProtectedRoute from './components/RoleProtectedRoute';
 
 function App() {
@@ -22,6 +23,7 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/caregiver-login" element={<CaregiverLogin />} />
+        <Route path="/caregiver-register" element={<CaregiverRegister />} />
 
         <Route
           path="/dashboard"

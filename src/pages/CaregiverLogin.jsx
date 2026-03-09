@@ -87,6 +87,12 @@ export default function CaregiverLogin() {
         </form>
 
         <p className="mt-6 text-center text-lg">
+          <span className="text-slate-600">Don't have an account? </span>
+          <Link to="/caregiver-register" className="text-indigo-600 font-semibold hover:underline">
+            Register here
+          </Link>
+        </p>
+        <p className="mt-2 text-center text-lg">
           <Link to="/login" className="text-indigo-600 font-semibold hover:underline">
             Elder Login
           </Link>

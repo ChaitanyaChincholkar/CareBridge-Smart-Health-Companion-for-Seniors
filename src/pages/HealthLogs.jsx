@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getDatabase, ref, push, set, onValue } from 'firebase/database';
+import { getFirestore, collection, query, where, onSnapshot, addDoc } from 'firebase/firestore';
 import app, { auth } from '../services/firebase';
 import {
   LineChart,
@@ -16,7 +16,7 @@ import Modal from '../components/Modal';
 import { elderNavItems } from '../config/nav';
 import { Plus } from 'lucide-react';
 
-const db = getDatabase(app);
+const db = getFirestore(app);
 
 const cardClass = 'bg-white rounded-xl shadow-sm border border-slate-200 p-5';
 
@@ -41,6 +41,7 @@ export default function HealthLogs() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -49,23 +50,23 @@ export default function HealthLogs() {
       return;
     }
 
-    const logsRef = ref(db, `/healthLogs/${user.uid}`);
-    const unsubscribe = onValue(
-      logsRef,
+    const q = query(collection(db, 'healthLogs'), where('userId', '==', user.uid));
+    const unsubscribe = onSnapshot(
+      q,
       (snapshot) => {
-        const data = snapshot.val() || {};
-        const items = Object.entries(data).map(([key, value]) => ({
-          id: key,
-          ...value,
+        const items = snapshot.docs.map(docSnap => ({
+          id: docSnap.id,
+          ...docSnap.data()
         }));
         items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
         setLogs(items);
         setLoading(false);
       },
-      () => {
+      (err) => {
+        console.error(err);
         setError('Unable to load health logs right now.');
         setLoading(false);
-      },
+      }
     );
 
     return () => unsubscribe();
@@ -96,19 +97,15 @@ export default function HealthLogs() {
       return;
     }
 
+    setIsSubmitting(true);
     try {
-      const logsRef = ref(db, `/healthLogs/${user.uid}`);
-      const newRef = push(logsRef);
-      const id = newRef.key;
-      const createdAt = Date.now();
-
-      await set(newRef, {
-        id,
+      await addDoc(collection(db, 'healthLogs'), {
         bp: bp.trim() || null,
         sugar: sugar.trim() || null,
         heartRate: heartRate.trim() || null,
         notes: notes.trim() || null,
-        createdAt,
+        userId: user.uid,
+        createdAt: Date.now(),
       });
 
       setBp('');
@@ -116,8 +113,11 @@ export default function HealthLogs() {
       setHeartRate('');
       setNotes('');
       setModalOpen(false);
-    } catch {
+    } catch (err) {
+      console.error(err);
       setError('Could not save this health log. Please try again.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -223,9 +223,9 @@ export default function HealthLogs() {
           <button
             type="submit"
             className="w-full py-3 text-sm font-semibold rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 transition disabled:opacity-70 disabled:cursor-not-allowed"
-            disabled={!user}
+            disabled={!user || isSubmitting}
           >
-            Save Health Log
+            {isSubmitting ? 'Saving...' : 'Save Health Log'}
           </button>
         </form>
       </Modal>
@@ -235,7 +235,7 @@ export default function HealthLogs() {
         <p className="text-sm text-slate-600">Loading health logs…</p>
       ) : logs.length === 0 ? (
         <p className={`${cardClass} text-sm text-slate-600`}>
-          {user ? 'No health logs yet. Click "Add Health Log" to add one.' : 'Log in to see your health logs.'}
+          {user ? 'No data available' : 'Log in to see your health logs.'}
         </p>
       ) : (
         <ul className="space-y-4">

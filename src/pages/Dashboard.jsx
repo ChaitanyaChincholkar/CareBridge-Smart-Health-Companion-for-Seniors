@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { getDatabase, onValue, ref } from "firebase/database";
+import { getFirestore, collection, query, where, onSnapshot, doc, getDoc } from "firebase/firestore";
 import app, { auth } from "../services/firebase";
 import AppLayout from "../components/AppLayout";
 import { elderNavItems } from "../config/nav";
 
-const db = getDatabase(app);
+const db = getFirestore(app);
 
 function timeToMinutes(timeString = "") {
   const [h, m] = timeString.split(":").map((part) => parseInt(part, 10));
@@ -22,6 +22,8 @@ export default function Dashboard() {
   const [loadingMeds, setLoadingMeds] = useState(true);
   const [loadingAppts, setLoadingAppts] = useState(true);
   const [loadingLogs, setLoadingLogs] = useState(true);
+  const [elderName, setElderName] = useState("");
+  const [loadingName, setLoadingName] = useState(true);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -29,29 +31,46 @@ export default function Dashboard() {
       setLoadingMeds(false);
       setLoadingAppts(false);
       setLoadingLogs(false);
+      setLoadingName(false);
       return;
     }
 
-    const medsUnsub = onValue(
-      ref(db, `/medications/${user.uid}`),
+    const fetchName = async () => {
+      try {
+        const docRef = doc(db, 'elders', user.uid);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists() && docSnap.data().name) {
+          setElderName(docSnap.data().name);
+        }
+      } catch (err) {
+        console.error("Error fetching elder name:", err);
+      } finally {
+        setLoadingName(false);
+      }
+    };
+    fetchName();
+
+    const medsQuery = query(collection(db, 'medications'), where('userId', '==', user.uid));
+    const medsUnsub = onSnapshot(
+      medsQuery,
       (snapshot) => {
-        const data = snapshot.val() || {};
-        const items = Object.entries(data).map(([key, value]) => ({ id: key, ...value }));
+        const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         items.sort((a, b) => timeToMinutes(a.time) - timeToMinutes(b.time));
         setMedications(items);
         setLoadingMeds(false);
       },
-      () => {
+      (err) => {
+        console.error(err);
         setMedications([]);
         setLoadingMeds(false);
       }
     );
 
-    const apptsUnsub = onValue(
-      ref(db, `/appointments/${user.uid}`),
+    const apptsQuery = query(collection(db, 'appointments'), where('userId', '==', user.uid));
+    const apptsUnsub = onSnapshot(
+      apptsQuery,
       (snapshot) => {
-        const data = snapshot.val() || {};
-        const items = Object.entries(data).map(([key, value]) => ({ id: key, ...value }));
+        const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         items.sort((a, b) => {
           const aDate = a.date || "";
           const bDate = b.date || "";
@@ -61,22 +80,24 @@ export default function Dashboard() {
         setAppointments(items);
         setLoadingAppts(false);
       },
-      () => {
+      (err) => {
+        console.error(err);
         setAppointments([]);
         setLoadingAppts(false);
       }
     );
 
-    const logsUnsub = onValue(
-      ref(db, `/healthLogs/${user.uid}`),
+    const logsQuery = query(collection(db, 'healthLogs'), where('userId', '==', user.uid));
+    const logsUnsub = onSnapshot(
+      logsQuery,
       (snapshot) => {
-        const data = snapshot.val() || {};
-        const items = Object.entries(data).map(([key, value]) => ({ id: key, ...value }));
+        const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
         setHealthLogs(items);
         setLoadingLogs(false);
       },
-      () => {
+      (err) => {
+        console.error(err);
         setHealthLogs([]);
         setLoadingLogs(false);
       }
@@ -117,7 +138,9 @@ export default function Dashboard() {
 
   return (
     <AppLayout navItems={elderNavItems}>
-      <h2 className="text-xl font-bold text-slate-900 mb-6">Dashboard</h2>
+      <h2 className="text-xl font-bold text-slate-900 mb-6">
+        {loadingName ? "Dashboard" : `Hello, ${elderName || "User"}`}
+      </h2>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
         <div className={cardClass}>
@@ -134,7 +157,7 @@ export default function Dashboard() {
               )}
             </div>
           ) : (
-            <p className="text-sm text-slate-600">No health data yet. Add from Health Logs.</p>
+            <p className="text-sm text-slate-600">No data available.</p>
           )}
         </div>
 
@@ -149,7 +172,7 @@ export default function Dashboard() {
               <span className="font-semibold">{nextMed.time}</span>
             </p>
           ) : (
-            <p className="text-sm text-slate-600">No medications scheduled.</p>
+            <p className="text-sm text-slate-600">No data available.</p>
           )}
         </div>
 
@@ -165,7 +188,7 @@ export default function Dashboard() {
               {upcomingAppt.hospital && <p>{upcomingAppt.hospital}</p>}
             </div>
           ) : (
-            <p className="text-sm text-slate-600">No upcoming appointments.</p>
+            <p className="text-sm text-slate-600">No data available.</p>
           )}
         </div>
       </div>

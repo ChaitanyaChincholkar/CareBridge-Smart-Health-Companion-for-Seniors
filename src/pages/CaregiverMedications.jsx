@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { getDatabase, ref, onValue, get } from 'firebase/database';
+import { getFirestore, collection, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import app from '../services/firebase';
 import AppLayout from '../components/AppLayout';
 import { caregiverNavItems } from '../config/nav';
 
-const db = getDatabase(app);
+const db = getFirestore(app);
 
 const cardClass = 'bg-white rounded-xl shadow-sm border border-slate-200 p-5';
 
@@ -13,15 +13,13 @@ export default function CaregiverMedications() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const medsRootRef = ref(db, '/medications');
-
-    const unsubscribe = onValue(
-      medsRootRef,
+    const unsubscribe = onSnapshot(
+      collection(db, 'medications'),
       async (snapshot) => {
-        const root = snapshot.val() || {};
-        const userIds = Object.keys(root);
+        const collected = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+        const uniqueUserIds = Array.from(new Set(collected.map(m => m.userId).filter(Boolean)));
 
-        if (userIds.length === 0) {
+        if (uniqueUserIds.length === 0) {
           setMedsByElder([]);
           setLoading(false);
           return;
@@ -29,11 +27,14 @@ export default function CaregiverMedications() {
 
         try {
           const nameEntries = await Promise.all(
-            userIds.map(async (uid) => {
+            uniqueUserIds.map(async (uid) => {
               try {
-                const nameRef = ref(db, `users/${uid}/name`);
-                const nameSnap = await get(nameRef);
-                return [uid, nameSnap.val() || uid];
+                const elderDocRef = doc(db, 'elders', uid);
+                const elderSnap = await getDoc(elderDocRef);
+                if (elderSnap.exists()) {
+                  return [uid, elderSnap.data().name || uid];
+                }
+                return [uid, uid];
               } catch {
                 return [uid, uid];
               }
@@ -41,10 +42,9 @@ export default function CaregiverMedications() {
           );
           const namesById = Object.fromEntries(nameEntries);
 
-          const grouped = userIds.map((uid) => {
-            const userMeds = root[uid] || {};
-            const items = Object.entries(userMeds).map(([key, value]) => ({ id: key, ...value }));
-            items.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+          const grouped = uniqueUserIds.map((uid) => {
+            const userMeds = collected.filter((m) => m.userId === uid);
+            userMeds.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
             return {
               userId: uid,
               elderName: namesById[uid],
@@ -58,7 +58,8 @@ export default function CaregiverMedications() {
         }
         setLoading(false);
       },
-      () => {
+      (err) => {
+        console.error(err);
         setMedsByElder([]);
         setLoading(false);
       }
@@ -92,8 +93,8 @@ export default function CaregiverMedications() {
                           <span
                             className={
                               med.status === 'taken' ? 'font-semibold text-green-700' :
-                              med.status === 'missed' ? 'font-semibold text-red-700' :
-                              'font-semibold text-amber-700'
+                                med.status === 'missed' ? 'font-semibold text-red-700' :
+                                  'font-semibold text-amber-700'
                             }
                           >
                             {med.status ? med.status.charAt(0).toUpperCase() + med.status.slice(1) : 'Pending'}

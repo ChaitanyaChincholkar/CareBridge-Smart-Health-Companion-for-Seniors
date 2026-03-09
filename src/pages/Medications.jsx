@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { getDatabase, ref, push, set, onValue, update } from 'firebase/database';
+import { getFirestore, collection, query, where, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import app, { auth } from '../services/firebase';
 import AppLayout from '../components/AppLayout';
 import Modal from '../components/Modal';
 import { elderNavItems } from '../config/nav';
 import { Plus } from 'lucide-react';
 
-const db = getDatabase(app);
+const db = getFirestore(app);
 
 const cardClass = 'bg-white rounded-xl shadow-sm border border-slate-200 p-5';
 
@@ -18,6 +18,7 @@ export default function Medications() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const alarmAudioRef = useRef(new Audio('https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg'));
   const triggeredRemindersRef = useRef(new Set());
@@ -29,19 +30,19 @@ export default function Medications() {
       return;
     }
 
-    const medsRef = ref(db, `/medications/${user.uid}`);
-    const unsubscribe = onValue(
-      medsRef,
+    const q = query(collection(db, 'medications'), where('userId', '==', user.uid));
+    const unsubscribe = onSnapshot(
+      q,
       (snapshot) => {
-        const data = snapshot.val() || {};
-        const items = Object.entries(data).map(([key, value]) => ({
-          id: key,
-          ...value,
+        const items = snapshot.docs.map(docSnap => ({
+          id: docSnap.id,
+          ...docSnap.data()
         }));
         setMedications(items);
         setLoading(false);
       },
-      () => {
+      (err) => {
+        console.error(err);
         setError('Unable to load medications right now.');
         setLoading(false);
       }
@@ -64,7 +65,7 @@ export default function Medications() {
           && !triggeredRemindersRef.current.has(reminderKey)
         ) {
           alarmAudioRef.current.currentTime = 0;
-          alarmAudioRef.current.play().catch(() => {});
+          alarmAudioRef.current.play().catch(() => { });
 
           window.alert(`Time to take your medicine: ${med.name}`);
 
@@ -91,27 +92,29 @@ export default function Medications() {
       return;
     }
 
+    setIsSubmitting(true);
     try {
-      const medsRef = ref(db, `/medications/${user.uid}`);
-      const newRef = push(medsRef);
-      const id = newRef.key;
-      const createdAt = Date.now();
+      const { getFirestore, collection, addDoc } = await import('firebase/firestore');
+      const dbFirestore = getFirestore(app);
 
-      await set(newRef, {
-        id,
-        name,
-        dosage,
+      await addDoc(collection(dbFirestore, 'medications'), {
+        name: name.trim(),
+        dosage: dosage.trim(),
         time,
+        userId: user.uid,
         status: 'pending',
-        createdAt,
+        createdAt: Date.now(),
       });
 
       setName('');
       setDosage('');
       setTime('');
       setModalOpen(false);
-    } catch {
+    } catch (err) {
+      console.error(err);
       setError('Could not save this medication. Please try again.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -123,9 +126,10 @@ export default function Medications() {
     }
 
     try {
-      const medRef = ref(db, `/medications/${user.uid}/${id}`);
-      await update(medRef, { status });
-    } catch {
+      const medRef = doc(db, 'medications', id);
+      await updateDoc(medRef, { status });
+    } catch (err) {
+      console.error(err);
       setError('Could not update medication status. Please try again.');
     }
   };
@@ -194,9 +198,9 @@ export default function Medications() {
           <button
             type="submit"
             className="w-full py-3 text-sm font-semibold rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 transition disabled:opacity-70 disabled:cursor-not-allowed"
-            disabled={!user}
+            disabled={!user || isSubmitting}
           >
-            Save Medication
+            {isSubmitting ? 'Saving...' : 'Save Medication'}
           </button>
         </form>
       </Modal>
@@ -221,8 +225,8 @@ export default function Medications() {
                     <span
                       className={
                         med.status === 'taken' ? 'font-semibold text-green-700' :
-                        med.status === 'missed' ? 'font-semibold text-red-700' :
-                        'font-semibold text-amber-700'
+                          med.status === 'missed' ? 'font-semibold text-red-700' :
+                            'font-semibold text-amber-700'
                       }
                     >
                       {med.status ? med.status.charAt(0).toUpperCase() + med.status.slice(1) : 'Pending'}

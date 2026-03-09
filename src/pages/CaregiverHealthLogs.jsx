@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getDatabase, ref, onValue, get } from 'firebase/database';
+import { getFirestore, collection, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import app from '../services/firebase';
 import {
   LineChart,
@@ -14,7 +14,7 @@ import {
 import AppLayout from '../components/AppLayout';
 import { caregiverNavItems } from '../config/nav';
 
-const db = getDatabase(app);
+const db = getFirestore(app);
 
 const cardClass = 'bg-white rounded-xl shadow-sm border border-slate-200 p-5';
 
@@ -37,19 +37,13 @@ export default function CaregiverHealthLogs() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const healthLogsRootRef = ref(db, '/healthLogs');
-
-    const unsubscribe = onValue(
-      healthLogsRootRef,
+    const unsubscribe = onSnapshot(
+      collection(db, 'healthLogs'),
       async (snapshot) => {
-        const root = snapshot.val() || {};
-        const collected = [];
-
-        Object.entries(root).forEach(([userId, userLogs]) => {
-          Object.entries(userLogs || {}).forEach(([logId, log]) => {
-            collected.push({ id: logId, userId, ...log });
-          });
-        });
+        const collected = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...docSnap.data()
+        }));
 
         collected.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
@@ -62,9 +56,12 @@ export default function CaregiverHealthLogs() {
             const nameEntries = await Promise.all(
               uniqueUserIds.map(async (uid) => {
                 try {
-                  const nameRef = ref(db, `users/${uid}/name`);
-                  const nameSnap = await get(nameRef);
-                  return [uid, nameSnap.val() || uid];
+                  const elderDocRef = doc(db, 'elders', uid);
+                  const elderSnap = await getDoc(elderDocRef);
+                  if (elderSnap.exists()) {
+                    return [uid, elderSnap.data().name || uid];
+                  }
+                  return [uid, uid];
                 } catch {
                   return [uid, uid];
                 }
@@ -100,7 +97,8 @@ export default function CaregiverHealthLogs() {
         setHealthLogsByElder(grouped);
         setLoading(false);
       },
-      () => {
+      (err) => {
+        console.error(err);
         setError('Unable to load health logs right now.');
         setLoading(false);
       }
@@ -118,14 +116,14 @@ export default function CaregiverHealthLogs() {
   const selectedGroup = healthLogsByElder.find((g) => g.userId === selectedElderId) || healthLogsByElder[0];
   const chartData = selectedGroup
     ? [...selectedGroup.logs]
-        .reverse()
-        .filter((l) => l.createdAt)
-        .map((l) => ({
-          date: new Date(l.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
-          bp: parseNumeric(l.bp),
-          sugar: parseNumeric(l.sugar),
-          heartRate: parseNumeric(l.heartRate),
-        }))
+      .reverse()
+      .filter((l) => l.createdAt)
+      .map((l) => ({
+        date: new Date(l.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+        bp: parseNumeric(l.bp),
+        sugar: parseNumeric(l.sugar),
+        heartRate: parseNumeric(l.heartRate),
+      }))
     : [];
 
   return (

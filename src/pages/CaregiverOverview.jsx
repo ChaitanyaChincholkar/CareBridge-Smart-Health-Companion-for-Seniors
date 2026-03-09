@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { getDatabase, ref, onValue } from 'firebase/database';
-import app from '../services/firebase';
+import { getFirestore, collection, onSnapshot, query, doc, getDoc } from 'firebase/firestore';
+import app, { auth } from '../services/firebase';
 import AppLayout from '../components/AppLayout';
 import { caregiverNavItems } from '../config/nav';
 
-const db = getDatabase(app);
+const db = getFirestore(app);
 
 const cardClass = 'bg-white rounded-xl shadow-sm border border-slate-200 p-5';
 
@@ -12,43 +12,63 @@ export default function CaregiverOverview() {
   const [totalElders, setTotalElders] = useState(0);
   const [activeSOS, setActiveSOS] = useState(0);
   const [recentHealthCount, setRecentHealthCount] = useState(0);
+  const [caregiverName, setCaregiverName] = useState('');
+  const [loadingName, setLoadingName] = useState(true);
 
   useEffect(() => {
+    const user = auth.currentUser;
+    if (user) {
+      const fetchName = async () => {
+        try {
+          const docRef = doc(db, 'caregivers', user.uid);
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists() && docSnap.data().name) {
+            setCaregiverName(docSnap.data().name);
+          }
+        } catch (err) {
+          console.error('Error fetching caregiver name:', err);
+        } finally {
+          setLoadingName(false);
+        }
+      };
+      fetchName();
+    } else {
+      setLoadingName(false);
+    }
+
     const eldersSet = new Set();
     const updateTotals = () => {
       setTotalElders(eldersSet.size);
     };
 
-    const sosUnsub = onValue(ref(db, '/sosAlerts'), (snapshot) => {
-      const root = snapshot.val() || {};
+    const sosUnsub = onSnapshot(collection(db, 'sos'), (snapshot) => {
       let unhandled = 0;
-      Object.entries(root).forEach(([userId, userAlerts]) => {
-        eldersSet.add(userId);
-        Object.values(userAlerts || {}).forEach((a) => {
-          if (!a.handled) unhandled++;
-        });
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.userId) eldersSet.add(data.userId);
+        if (!data.handled) unhandled++;
       });
       setActiveSOS(unhandled);
       updateTotals();
     });
 
-    const healthUnsub = onValue(ref(db, '/healthLogs'), (snapshot) => {
-      const root = snapshot.val() || {};
+    const healthUnsub = onSnapshot(collection(db, 'healthLogs'), (snapshot) => {
       let count = 0;
       const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
-      Object.entries(root).forEach(([userId, userLogs]) => {
-        eldersSet.add(userId);
-        Object.values(userLogs || {}).forEach((l) => {
-          if (l.createdAt && l.createdAt >= dayAgo) count++;
-        });
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.userId) eldersSet.add(data.userId);
+        if (data.createdAt && data.createdAt >= dayAgo) count++;
       });
       setRecentHealthCount(count);
       updateTotals();
     });
 
-    const medsUnsub = onValue(ref(db, '/medications'), (snapshot) => {
-      const root = snapshot.val() || {};
-      Object.keys(root).forEach((userId) => eldersSet.add(userId));
+    const medsUnsub = onSnapshot(collection(db, 'medications'), (snapshot) => {
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.userId) eldersSet.add(data.userId);
+      });
       updateTotals();
     });
 
@@ -61,7 +81,9 @@ export default function CaregiverOverview() {
 
   return (
     <AppLayout navItems={caregiverNavItems}>
-      <h2 className="text-xl font-bold text-slate-900 mb-6">Dashboard Overview</h2>
+      <h2 className="text-xl font-bold text-slate-900 mb-6">
+        {loadingName ? 'Dashboard Overview' : `Hello, ${caregiverName || 'User'}`}
+      </h2>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <div className={cardClass}>

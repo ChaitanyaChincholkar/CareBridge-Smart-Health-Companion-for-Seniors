@@ -21,11 +21,31 @@ export default function RoleProtectedRoute({ requiredRole, children }) {
       setUser(currentUser);
 
       try {
-        const db = getDatabase(app);
-        const roleRef = ref(db, `users/${currentUser.uid}/role`);
-        const snapshot = await get(roleRef);
-        setRole(snapshot.val() ?? null);
-      } catch {
+        if (requiredRole === 'caregiver') {
+          // Check Firestore first for caregiver role
+          const { getFirestore, doc, getDoc } = await import('firebase/firestore');
+          const dbFirestore = getFirestore(app);
+          const caregiverDoc = await getDoc(doc(dbFirestore, 'caregivers', currentUser.uid));
+
+          if (caregiverDoc.exists() && caregiverDoc.data().role === 'caregiver') {
+            setRole('caregiver');
+          } else {
+            setRole(null);
+          }
+        } else {
+          // Check Firestore for elder role
+          const { getFirestore, doc, getDoc } = await import('firebase/firestore');
+          const dbFirestore = getFirestore(app);
+          const elderDoc = await getDoc(doc(dbFirestore, 'elders', currentUser.uid));
+
+          if (elderDoc.exists() && elderDoc.data().role === 'elder') {
+            setRole('elder');
+          } else {
+            setRole(null);
+          }
+        }
+      } catch (err) {
+        console.error("Error checking role:", err);
         setRole(null);
       } finally {
         setChecking(false);
@@ -35,7 +55,7 @@ export default function RoleProtectedRoute({ requiredRole, children }) {
     return () => {
       unsubscribe();
     };
-  }, []);
+  }, [requiredRole]);
 
   if (checking) {
     return (
