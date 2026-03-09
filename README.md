@@ -5,7 +5,17 @@ CareBridge is a web application designed to help elderly individuals manage thei
 The system provides medication reminders, health tracking, appointment management, and an emergency SOS alert system that instantly notifies caregivers.
 
 ---
+## 🚀 Deployment
 
+The CareBridge Smart Health Companion web application is deployed using **Firebase Hosting** for fast and secure cloud delivery.
+
+🔗 Live Demo: https://carebridge-app-b413f.web.app
+
+### Deployment Platform
+- Firebase Hosting
+- Google Cloud Infrastructure
+
+---
 # Features
 
 ## Elder Features
@@ -114,6 +124,7 @@ Open the browser
 - **Soham Paraskar** - Feature Development & Testing
 - **Chaitanya Ravindra Chincholkar** – Deployment & Frontend
 
+---
 # Project Structure
 src
 ├── components
