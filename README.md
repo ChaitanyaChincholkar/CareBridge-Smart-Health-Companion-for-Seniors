@@ -108,6 +108,12 @@ Open the browser
 
 ---
 
+## 👨‍💻 Contributors
+- **Akshar Jain** – Backend & Firebase
+- **Yash Joshi** -  UI/UX Design  
+- **Soham Paraskar** - Feature Development & Testing
+- **Chaitanya Ravindra Chincholkar** – Deployment & Frontend
+
 # Project Structure
 src
 ├── components
